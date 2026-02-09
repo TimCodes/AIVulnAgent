@@ -10,6 +10,10 @@
 // Example 1: Xray scan result (from the problem statement)
 const xrayScanExample = {
   source: "xray",
+  repository: {
+    owner: "TimCodes",
+    repo: "AIVulnAgent"
+  },
   data: {
     vulnerabilities: [
       {
@@ -52,6 +56,10 @@ const xrayScanExample = {
 // Example 2: Dependabot alert
 const dependabotScanExample = {
   source: "dependabot",
+  repository: {
+    owner: "myorg",
+    repo: "my-app"
+  },
   data: {
     alerts: [
       {
@@ -91,6 +99,10 @@ const dependabotScanExample = {
 // Example 3: SARIF format (Standard format for security tools)
 const sarifScanExample = {
   source: "sarif",
+  repository: {
+    owner: "acme-corp",
+    repo: "web-service"
+  },
   data: {
     "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
     version: "2.1.0",
@@ -136,6 +148,10 @@ const sarifScanExample = {
 // Example 4: Direct format (backward compatible)
 const directFormatExample = {
   source: "direct",
+  repository: {
+    owner: "TimCodes",
+    repo: "AIVulnAgent"
+  },
   data: {
     cveId: "CVE-2024-12345",
     packageName: "lodash",

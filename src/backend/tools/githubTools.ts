@@ -287,7 +287,6 @@ export async function readIssues(
       updatedAt: item.updated_at,
     }));
 }
-}
 
 // ---------------------------------------------------------------------------
 // Tool 4: createApprovalTagWorkflow
