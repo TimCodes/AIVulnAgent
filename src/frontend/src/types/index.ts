@@ -11,6 +11,8 @@ export type RemediationStatus =
   | "storing_fix"
   | "resolved"
   | "awaiting_approval"
+  | "awaiting_rebuild"
+  | "verifying_rebuild"
   | "failed";
 
 export interface Vulnerability {
@@ -57,6 +59,8 @@ export interface RemediationState {
   status: RemediationStatus;
   stepLog: StepLogEntry[];
   error: string;
+  rebuildVerified: boolean;
+  rebuildSuccessful: boolean;
 }
 
 export interface SSEEvent {

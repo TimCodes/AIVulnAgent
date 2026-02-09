@@ -366,6 +366,8 @@ export async function createApprovalTagWorkflow(
       inputs: {
         tag: params.tagName,
         cve_id: params.cveId,
+        vuln_id: params.vulnId,
+        callback_url: params.callbackUrl,
         ...(params.imageName ? { image_name: params.imageName } : {}),
       },
     });

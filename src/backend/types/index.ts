@@ -16,6 +16,8 @@ export type RemediationStatus =
   | "storing_fix"
   | "resolved"
   | "awaiting_approval"
+  | "awaiting_rebuild"
+  | "verifying_rebuild"
   | "failed";
 
 /** A vulnerability as ingested from a scanner (Trivy, Grype, etc.). */
@@ -52,6 +54,29 @@ export interface StoredFix {
   prUrl?: string;
   tagName?: string;
   resolvedAt: string;
+}
+
+/** Payload sent by the rebuild workflow webhook */
+export interface RebuildScanResult {
+  vulnId: string;
+  cveId: string;
+  repoOwner: string;
+  repoName: string;
+  imageName: string;
+  tag: string;
+  workflowRunId: number;
+  scanResults: {
+    vulnerabilities: Array<{
+      cveId: string;
+      packageName: string;
+      severity: string;
+      fixedVersion?: string;
+    }>;
+    totalCount: number;
+    scanTool: string;
+  };
+  buildSuccess: boolean;
+  timestamp: string;
 }
 
 /** The state that flows through the LangGraph remediation agent. */

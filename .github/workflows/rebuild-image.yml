@@ -13,22 +13,34 @@ on:
       cve_id:
         description: 'CVE being remediated'
         required: true
+      vuln_id:
+        description: 'Vulnerability ID for webhook correlation'
+        required: true
+      callback_url:
+        description: 'Agent webhook URL to POST scan results to'
+        required: true
+      image_name:
+        description: 'Container image name override'
+        required: false
 
 jobs:
   approve:
     name: Approve Rebuild
     runs-on: ubuntu-latest
-    environment: production  # <-- requires environment approval in GitHub settings
+    environment: production
     steps:
       - name: Approval gate
         run: |
           echo "✅ Rebuild approved for tag: ${{ inputs.tag }}"
           echo "   CVE: ${{ inputs.cve_id }}"
+          echo "   Vuln ID: ${{ inputs.vuln_id }}"
 
   build:
     name: Build & Push Image
     needs: approve
     runs-on: ubuntu-latest
+    outputs:
+      build_success: ${{ steps.build-result.outputs.success }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +57,7 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and push
+        id: docker-build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -57,7 +70,80 @@ jobs:
           build-args: |
             CVE_REMEDIATION=${{ inputs.cve_id }}
 
-      - name: Verify image
+      - name: Set build result
+        id: build-result
+        run: echo "success=true" >> "$GITHUB_OUTPUT"
+
+  scan:
+    name: Scan Rebuilt Image
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ vars.REGISTRY }}/${{ vars.IMAGE_NAME }}:${{ inputs.tag }}'
+          format: 'json'
+          output: 'trivy-results.json'
+        continue-on-error: true
+
+      - name: Parse and POST results to agent webhook
+        env:
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          VULN_ID: ${{ inputs.vuln_id }}
+          CVE_ID: ${{ inputs.cve_id }}
+          TAG: ${{ inputs.tag }}
+          REGISTRY: ${{ vars.REGISTRY }}
+          IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+          BUILD_SUCCESS: ${{ needs.build.outputs.build_success }}
         run: |
-          echo "🐳 Image built and pushed with tag: ${{ inputs.tag }}"
-          echo "   Remediation for: ${{ inputs.cve_id }}"
+          # Parse Trivy JSON into the expected webhook payload format
+          SCAN_PAYLOAD=$(python3 -c "
+          import json, sys, os
+
+          try:
+              with open('trivy-results.json', 'r') as f:
+                  trivy = json.load(f)
+          except:
+              trivy = {'Results': []}
+
+          vulns = []
+          for result in trivy.get('Results', []):
+              for v in result.get('Vulnerabilities', []):
+                  vulns.append({
+                      'cveId': v.get('VulnerabilityID', ''),
+                      'packageName': v.get('PkgName', ''),
+                      'severity': v.get('Severity', 'unknown').lower(),
+                      'fixedVersion': v.get('FixedVersion', None)
+                  })
+
+          payload = {
+              'vulnId': os.environ['VULN_ID'],
+              'cveId': os.environ['CVE_ID'],
+              'repoOwner': '${{ github.repository_owner }}',
+              'repoName': '${{ github.event.repository.name }}',
+              'imageName': f\"{os.environ['REGISTRY']}/{os.environ['IMAGE_NAME']}\",
+              'tag': os.environ['TAG'],
+              'workflowRunId': int('${{ github.run_id }}'),
+              'scanResults': {
+                  'vulnerabilities': vulns,
+                  'totalCount': len(vulns),
+                  'scanTool': 'trivy'
+              },
+              'buildSuccess': os.environ.get('BUILD_SUCCESS', 'false') == 'true',
+              'timestamp': '$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+          }
+
+          print(json.dumps(payload))
+          " 2>/dev/null)
+
+          echo "📡 Sending scan results to agent webhook..."
+          curl -sf -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$SCAN_PAYLOAD" \
+            --retry 3 \
+            --retry-delay 5 \
+            --max-time 30
+
+          echo ""
+          echo "✅ Webhook callback sent successfully"

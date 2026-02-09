@@ -8,6 +8,7 @@ import {
   researchFix,
   createPRNode,
   createTagWorkflowNode,
+  verifyRebuildResult,
   storeInRAG,
 } from "./agentNodes.js";
 
@@ -52,6 +53,7 @@ export function buildRemediationAgentMap() {
     .addNode("researchFix", researchFix)
     .addNode("createPR", createPRNode)
     .addNode("createTagWorkflow", createTagWorkflowNode)
+    .addNode("verifyRebuildResult", verifyRebuildResult)
     .addNode("storeInRAG", storeInRAG)
 
     // Entry point
@@ -101,14 +103,16 @@ export function buildRemediationAgentMap() {
     // After PR: always store the fix in RAG
     .addEdge("createPR", "storeInRAG")
 
-    // After tag workflow: store in RAG only if a new fix was researched;
-    // skip RAG if a simple rebuild was all that was needed
-    .addConditionalEdges("createTagWorkflow", (state: RemediationStateType) => {
-      if (state.rebuildWouldFix) return "done";
-      return "storeInRAG";
+    // After tag workflow: always verify the rebuild result
+    .addEdge("createTagWorkflow", "verifyRebuildResult")
+
+    // After verification: store fix if successful, otherwise end with failure
+    .addConditionalEdges("verifyRebuildResult", (state: RemediationStateType) => {
+      if (state.rebuildSuccessful) return "storeInRAG";
+      return "done";
     }, {
-      done: END,
       storeInRAG: "storeInRAG",
+      done: END,
     })
 
     // After storing: done

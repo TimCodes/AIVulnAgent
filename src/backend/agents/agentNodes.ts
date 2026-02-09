@@ -5,6 +5,8 @@ import {
   createPullRequest,
   createApprovalTagWorkflow,
 } from "../tools/githubTools.js";
+import { registerPendingRebuild } from "../services/pendingRebuilds.js";
+import { config } from "../config/env.js";
 import type { RemediationStateType } from "./state.js";
 import type { StepLogEntry, StoredFix } from "../types/index.js";
 
@@ -374,13 +376,17 @@ ${state.fixSteps}
 /**
  * Creates a GitHub tag and triggers a rebuild workflow that requires
  * manual user approval. Uses the createApprovalTagWorkflow tool.
+ * Waits for the webhook callback with scan results.
  */
 export async function createTagWorkflowNode(
   state: RemediationStateType
 ): Promise<Partial<RemediationStateType>> {
   const vuln = state.vulnerability;
+  const targetOwner = vuln.repoOwner ?? config.github.owner;
+  const targetRepo = vuln.repoName ?? config.github.repo;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const tagName = `rebuild/${vuln.cveId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}-${timestamp}`;
+  const callbackUrl = `${config.server.webhookBaseUrl}/api/webhook/rebuild-complete`;
 
   try {
     const result = await createApprovalTagWorkflow({
@@ -394,10 +400,24 @@ export async function createTagWorkflowNode(
       repoName: vuln.repoName,
     });
 
+    // Register pending rebuild and wait for webhook callback
+    const rebuildPromise = registerPendingRebuild({
+      vulnId: vuln.id,
+      cveId: vuln.cveId,
+      repoOwner: targetOwner,
+      repoName: targetRepo,
+      tagName,
+    });
+
+    // Update state to show we're waiting
+    // Note: The graph execution will block here until the webhook resolves the promise
+    const scanResult = await rebuildPromise;
+
     return {
       tagName: result.tagName,
       workflowRunUrl: result.workflowRunUrl,
-      status: "awaiting_approval",
+      rebuildScanResult: scanResult,
+      status: "verifying_rebuild",
       stepLog: [
         logEntry(
           "createTagWorkflow",
@@ -408,12 +428,84 @@ export async function createTagWorkflowNode(
   } catch (err: any) {
     return {
       status: "failed",
-      error: `Failed to create tag/workflow: ${err.message}`,
+      error: `Failed to create tag/workflow or rebuild timed out: ${err.message}`,
       stepLog: [
-        logEntry("createTagWorkflow", `Tag creation failed: ${err.message}`, "failed"),
+        logEntry("createTagWorkflow", `Tag creation or rebuild failed: ${err.message}`, "failed"),
       ],
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Node: storeInRAG
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies whether the rebuild actually fixed the CVE by inspecting
+ * the scan results returned via the webhook callback.
+ */
+export async function verifyRebuildResult(
+  state: RemediationStateType
+): Promise<Partial<RemediationStateType>> {
+  const vuln = state.vulnerability;
+  const scanResult = state.rebuildScanResult;
+
+  if (!scanResult) {
+    return {
+      rebuildVerified: true,
+      rebuildSuccessful: false,
+      status: "failed",
+      error: "No scan results received from rebuild workflow.",
+      stepLog: [
+        logEntry("verifyRebuildResult", "No scan results available — cannot verify fix.", "failed"),
+      ],
+    };
+  }
+
+  if (!scanResult.buildSuccess) {
+    return {
+      rebuildVerified: true,
+      rebuildSuccessful: false,
+      status: "failed",
+      error: "Rebuild workflow reported build failure.",
+      stepLog: [
+        logEntry("verifyRebuildResult", "Image build failed in the workflow.", "failed"),
+      ],
+    };
+  }
+
+  // Check if the original CVE is still present in the scan results
+  const stillVulnerable = scanResult.scanResults.vulnerabilities.some(
+    (v) => v.cveId.toLowerCase() === vuln.cveId.toLowerCase()
+  );
+
+  if (stillVulnerable) {
+    return {
+      rebuildVerified: true,
+      rebuildSuccessful: false,
+      status: "failed",
+      error: `CVE ${vuln.cveId} is still present after rebuild.`,
+      stepLog: [
+        logEntry(
+          "verifyRebuildResult",
+          `Rebuild completed but ${vuln.cveId} still found in scan (${scanResult.scanResults.totalCount} total vulns). Fix was NOT effective.`,
+          "failed"
+        ),
+      ],
+    };
+  }
+
+  return {
+    rebuildVerified: true,
+    rebuildSuccessful: true,
+    status: "resolved",
+    stepLog: [
+      logEntry(
+        "verifyRebuildResult",
+        `✅ ${vuln.cveId} is no longer present after rebuild. Scanned ${scanResult.scanResults.totalCount} remaining vulnerabilities. Fix verified.`
+      ),
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------

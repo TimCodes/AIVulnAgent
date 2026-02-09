@@ -22,5 +22,6 @@ export const config = {
   server: {
     port: parseInt(process.env.PORT ?? "3001", 10),
     nodeEnv: process.env.NODE_ENV ?? "development",
+    webhookBaseUrl: process.env.WEBHOOK_BASE_URL ?? "http://localhost:3001",
   },
 } as const;
