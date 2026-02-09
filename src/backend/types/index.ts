@@ -33,8 +33,12 @@ export interface Vulnerability {
   imageName?: string; // present for container vulns
   filePath?: string; // present for code vulns
   createdAt: string;
-  repoOwner?: string; // GitHub owner of the repo this vuln belongs to
-  repoName?: string; // GitHub repo name this vuln belongs to
+  
+  // Repository context for multi-repo support
+  repoOwner: string;      // GitHub repository owner (user/org)
+  repoName: string;       // GitHub repository name
+  repoUrl?: string;       // Optional: Full GitHub URL for reference
+  defaultBranch?: string; // Optional: Target branch (defaults to repo's default)
 }
 
 /** A fix that has been discovered and stored in the RAG database. */

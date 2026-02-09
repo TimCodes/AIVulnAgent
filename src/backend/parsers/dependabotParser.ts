@@ -17,7 +17,10 @@ function normalizeDependabotSeverity(severity?: string): Severity {
 /**
  * Parses a single Dependabot vulnerability into our normalized Vulnerability format
  */
-function parseDependabotVulnerability(depVuln: DependabotVulnerability): Vulnerability {
+function parseDependabotVulnerability(
+  depVuln: DependabotVulnerability,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability {
   // Extract package information
   const packageName =
     depVuln.security_vulnerability?.package?.name ||
@@ -66,18 +69,24 @@ function parseDependabotVulnerability(depVuln: DependabotVulnerability): Vulnera
     imageName: isContainer ? packageName : undefined,
     filePath: !isContainer ? filePath : undefined,
     createdAt: depVuln.created_at || new Date().toISOString(),
+    repoOwner: repoContext.owner,
+    repoName: repoContext.repo,
+    repoUrl: repoContext.url,
   };
 }
 
 /**
  * Parses Dependabot scan results into normalized Vulnerability objects
  */
-export function parseDependabotScanResult(scanResult: DependabotScanResult): Vulnerability[] {
+export function parseDependabotScanResult(
+  scanResult: DependabotScanResult,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability[] {
   if (!scanResult.alerts || scanResult.alerts.length === 0) {
     return [];
   }
   
   return scanResult.alerts
     .filter(alert => alert.state !== "dismissed" && alert.state !== "fixed")
-    .map(parseDependabotVulnerability);
+    .map(depVuln => parseDependabotVulnerability(depVuln, repoContext));
 }

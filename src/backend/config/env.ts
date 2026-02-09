@@ -15,8 +15,9 @@ export const config = {
   },
   github: {
     token: process.env.GITHUB_TOKEN ?? "",
-    owner: process.env.GITHUB_OWNER ?? "",
-    repo: process.env.GITHUB_REPO ?? "",
+    // Optional: Default fallback values if repo context not in vulnerability
+    defaultOwner: process.env.GITHUB_OWNER ?? "",
+    defaultRepo: process.env.GITHUB_REPO ?? "",
   },
   server: {
     port: parseInt(process.env.PORT ?? "3001", 10),

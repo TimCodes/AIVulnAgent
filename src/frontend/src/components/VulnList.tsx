@@ -64,6 +64,9 @@ export function VulnList({ vulnerabilities, selectedId, onSelect }: VulnListProp
               {vuln.description}
             </p>
             <div className="flex gap-3 mt-2 text-xs text-gray-400">
+              {vuln.repoOwner && vuln.repoName && (
+                <span>Repo: {vuln.repoOwner}/{vuln.repoName}</span>
+              )}
               {vuln.imageName && <span>Image: {vuln.imageName}</span>}
               {vuln.filePath && <span>File: {vuln.filePath}</span>}
               <span>Source: {vuln.source}</span>

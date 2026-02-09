@@ -11,7 +11,7 @@ import {
   type DependabotScanResult,
   type SarifLog,
 } from "../parsers/index.js";
-import { resolvePendingRebuild, listPendingRebuilds } from "../services/pendingRebuilds.js";
+import { config } from "../config/env.js";
 
 const router = Router();
 
@@ -46,6 +46,14 @@ router.get("/api/vulnerabilities", (_req: Request, res: Response) => {
 router.get("/api/vulnerabilities/:id", (req: Request, res: Response) => {
   const vuln = vulnerabilities.get(req.params.id);
   if (!vuln) return res.status(404).json({ error: "Not found" });
+  
+  // Backfill missing repo context for backward compatibility
+  if (!vuln.repoOwner || !vuln.repoName) {
+    vuln.repoOwner = config.github.defaultOwner;
+    vuln.repoName = config.github.defaultRepo;
+    vuln.repoUrl = `https://github.com/${config.github.defaultOwner}/${config.github.defaultRepo}`;
+  }
+  
   res.json(vuln);
 });
 
@@ -55,29 +63,50 @@ router.get("/api/vulnerabilities/:id", (req: Request, res: Response) => {
 // -------------------------------------------------------------------------
 router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
   try {
-    const { source, data } = req.body;
+    const { source, data, repository } = req.body;
 
     if (!source) {
-      return res.status(400).json({ error: "Missing 'source' field. Must be one of: xray, dependabot, sarif, direct" });
+      return res.status(400).json({ 
+        error: "Missing 'source' field. Must be one of: xray, dependabot, sarif, direct" 
+      });
     }
 
     if (!data) {
       return res.status(400).json({ error: "Missing 'data' field" });
     }
 
+    // Require repository context
+    if (!repository) {
+      return res.status(400).json({ 
+        error: "Missing 'repository' field. Must include { owner, repo }" 
+      });
+    }
+
+    if (!repository.owner || !repository.repo) {
+      return res.status(400).json({ 
+        error: "Invalid 'repository' field. Must include 'owner' and 'repo'" 
+      });
+    }
+
+    const repoContext = {
+      owner: repository.owner,
+      repo: repository.repo,
+      url: repository.url || `https://github.com/${repository.owner}/${repository.repo}`,
+    };
+
     let parsedVulnerabilities: Vulnerability[] = [];
 
     switch (source.toLowerCase()) {
       case "xray":
-        parsedVulnerabilities = parseXrayScanResult(data as XrayScanResult);
+        parsedVulnerabilities = parseXrayScanResult(data as XrayScanResult, repoContext);
         break;
       
       case "dependabot":
-        parsedVulnerabilities = parseDependabotScanResult(data as DependabotScanResult);
+        parsedVulnerabilities = parseDependabotScanResult(data as DependabotScanResult, repoContext);
         break;
       
       case "sarif":
-        parsedVulnerabilities = parseSarifScanResult(data as SarifLog);
+        parsedVulnerabilities = parseSarifScanResult(data as SarifLog, repoContext);
         break;
       
       case "direct":
@@ -87,6 +116,10 @@ router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
           ...vuln,
           id: vuln.id ?? uuidv4(),
           createdAt: vuln.createdAt ?? new Date().toISOString(),
+          // Ensure repo context is present
+          repoOwner: vuln.repoOwner ?? repoContext.owner,
+          repoName: vuln.repoName ?? repoContext.repo,
+          repoUrl: vuln.repoUrl ?? repoContext.url,
         }));
         break;
       
@@ -104,8 +137,9 @@ router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
     }
 
     res.status(201).json({
-      message: `Successfully ingested ${storedVulnerabilities.length} ${storedVulnerabilities.length === 1 ? 'vulnerability' : 'vulnerabilities'}`,
+      message: `Successfully ingested ${storedVulnerabilities.length} vulnerability/vulnerabilities from ${repoContext.owner}/${repoContext.repo}`,
       count: storedVulnerabilities.length,
+      repository: repoContext,
       vulnerabilities: storedVulnerabilities,
     });
   } catch (err: any) {

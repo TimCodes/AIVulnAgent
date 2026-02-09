@@ -1,9 +1,15 @@
 import { Octokit } from "@octokit/rest";
 import { config } from "../config/env.js";
 
+// Keep global Octokit for now (can be per-repo later)
 const octokit = new Octokit({ auth: config.github.token });
-const owner = config.github.owner;
-const repo = config.github.repo;
+
+// Helper to get Octokit instance (future: per-repo tokens)
+function getOctokit(repoOwner?: string, repoName?: string): Octokit {
+  // For now, use global token
+  // TODO: Implement per-repo token management
+  return octokit;
+}
 
 // ---------------------------------------------------------------------------
 // Tool 1: triggerBuildAndScan
@@ -13,8 +19,10 @@ export interface TriggerBuildAndScanParams {
   imageName: string;
   ref?: string; // branch or tag to build from; defaults to default branch
   extraInputs?: Record<string, string>;
-  repoOwner?: string;
-  repoName?: string;
+  
+  // Required repository context
+  repoOwner: string;
+  repoName: string;
 }
 
 export interface TriggerBuildAndScanResult {
@@ -32,15 +40,18 @@ export interface TriggerBuildAndScanResult {
 export async function triggerBuildAndScan(
   params: TriggerBuildAndScanParams
 ): Promise<TriggerBuildAndScanResult> {
-  const targetOwner = params.repoOwner ?? owner;
-  const targetRepo = params.repoName ?? repo;
+  const { repoOwner, repoName } = params;
+  const octokit = getOctokit(repoOwner, repoName);
 
-  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
+  const { data: repoData } = await octokit.repos.get({ 
+    owner: repoOwner, 
+    repo: repoName 
+  });
   const ref = params.ref ?? repoData.default_branch;
 
   await octokit.actions.createWorkflowDispatch({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     workflow_id: "build-and-scan.yml",
     ref,
     inputs: {
@@ -50,7 +61,7 @@ export async function triggerBuildAndScan(
   });
 
   return {
-    workflowRunUrl: `https://github.com/${targetOwner}/${targetRepo}/actions`,
+    workflowRunUrl: `https://github.com/${repoOwner}/${repoName}/actions`,
     dispatched: true,
   };
 }
@@ -65,8 +76,10 @@ export interface CreatePullRequestParams {
   title: string;
   body: string;
   files: Array<{ path: string; content: string }>;
-  repoOwner?: string;
-  repoName?: string;
+  
+  // Required repository context
+  repoOwner: string;
+  repoName: string;
 }
 
 export interface CreatePullRequestResult {
@@ -83,32 +96,35 @@ export interface CreatePullRequestResult {
 export async function createPullRequest(
   params: CreatePullRequestParams
 ): Promise<CreatePullRequestResult> {
-  const targetOwner = params.repoOwner ?? owner;
-  const targetRepo = params.repoName ?? repo;
+  const { repoOwner, repoName } = params;
+  const octokit = getOctokit(repoOwner, repoName);
 
   // 1. Get default branch + latest SHA
-  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
+  const { data: repoData } = await octokit.repos.get({ 
+    owner: repoOwner, 
+    repo: repoName 
+  });
   const defaultBranch = repoData.default_branch;
 
   const { data: refData } = await octokit.git.getRef({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     ref: `heads/${defaultBranch}`,
   });
   const baseSha = refData.object.sha;
 
   // 2. Create branch
   await octokit.git.createRef({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     ref: `refs/heads/${params.branchName}`,
     sha: baseSha,
   });
 
   // 3. Get base tree
   const { data: commitData } = await octokit.git.getCommit({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     commit_sha: baseSha,
   });
 
@@ -116,8 +132,8 @@ export async function createPullRequest(
   const treeItems = await Promise.all(
     params.files.map(async (file) => {
       const { data: blob } = await octokit.git.createBlob({
-        owner: targetOwner,
-        repo: targetRepo,
+        owner: repoOwner,
+        repo: repoName,
         content: Buffer.from(file.content).toString("base64"),
         encoding: "base64",
       });
@@ -132,16 +148,16 @@ export async function createPullRequest(
 
   // 5. Create tree
   const { data: newTree } = await octokit.git.createTree({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     base_tree: commitData.tree.sha,
     tree: treeItems,
   });
 
   // 6. Create commit
   const { data: newCommit } = await octokit.git.createCommit({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     message: `fix: remediate ${params.cveId}\n\n${params.body}`,
     tree: newTree.sha,
     parents: [baseSha],
@@ -149,16 +165,16 @@ export async function createPullRequest(
 
   // 7. Update branch ref
   await octokit.git.updateRef({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     ref: `heads/${params.branchName}`,
     sha: newCommit.sha,
   });
 
   // 8. Open PR
   const { data: pr } = await octokit.pulls.create({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     title: params.title,
     body: params.body,
     head: params.branchName,
@@ -177,6 +193,10 @@ export interface ReadIssuesParams {
   searchTerm?: string;   // free-text filter (matched against title + body)
   state?: "open" | "closed" | "all";
   maxResults?: number;
+  
+  // Optional repository context (defaults to config values)
+  repoOwner?: string;
+  repoName?: string;
 }
 
 export interface GitHubIssue {
@@ -198,6 +218,8 @@ export interface GitHubIssue {
 export async function readIssues(
   params: ReadIssuesParams = {}
 ): Promise<GitHubIssue[]> {
+  const owner = params.repoOwner ?? config.github.defaultOwner;
+  const repo = params.repoName ?? config.github.defaultRepo;
   const maxResults = params.maxResults ?? 25;
 
   // If a search term is provided, use the search API for full-text matching
@@ -275,10 +297,10 @@ export interface CreateApprovalTagWorkflowParams {
   cveId: string;
   message: string;
   imageName?: string;
-  repoOwner?: string;
-  repoName?: string;
-  vulnId: string;
-  callbackUrl: string;
+  
+  // Required repository context
+  repoOwner: string;
+  repoName: string;
 }
 
 export interface CreateApprovalTagWorkflowResult {
@@ -300,23 +322,26 @@ export interface CreateApprovalTagWorkflowResult {
 export async function createApprovalTagWorkflow(
   params: CreateApprovalTagWorkflowParams
 ): Promise<CreateApprovalTagWorkflowResult> {
-  const targetOwner = params.repoOwner ?? owner;
-  const targetRepo = params.repoName ?? repo;
+  const { repoOwner, repoName } = params;
+  const octokit = getOctokit(repoOwner, repoName);
 
   // 1. Get default branch HEAD
-  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
+  const { data: repoData } = await octokit.repos.get({ 
+    owner: repoOwner, 
+    repo: repoName 
+  });
   const defaultBranch = repoData.default_branch;
 
   const { data: refData } = await octokit.git.getRef({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     ref: `heads/${defaultBranch}`,
   });
 
   // 2. Create annotated tag
   const { data: tagObj } = await octokit.git.createTag({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     tag: params.tagName,
     message: `${params.message}\n\nRemediation for ${params.cveId}`,
     object: refData.object.sha,
@@ -325,8 +350,8 @@ export async function createApprovalTagWorkflow(
 
   // 3. Create tag reference
   await octokit.git.createRef({
-    owner: targetOwner,
-    repo: targetRepo,
+    owner: repoOwner,
+    repo: repoName,
     ref: `refs/tags/${params.tagName}`,
     sha: tagObj.sha,
   });
@@ -334,8 +359,8 @@ export async function createApprovalTagWorkflow(
   // 4. Dispatch the rebuild workflow (requires env approval to proceed)
   try {
     await octokit.actions.createWorkflowDispatch({
-      owner: targetOwner,
-      repo: targetRepo,
+      owner: repoOwner,
+      repo: repoName,
       workflow_id: "rebuild-image.yml",
       ref: defaultBranch,
       inputs: {
@@ -353,8 +378,8 @@ export async function createApprovalTagWorkflow(
     );
   }
 
-  const tagUrl = `https://github.com/${targetOwner}/${targetRepo}/releases/tag/${params.tagName}`;
-  const workflowRunUrl = `https://github.com/${targetOwner}/${targetRepo}/actions`;
+  const tagUrl = `https://github.com/${repoOwner}/${repoName}/releases/tag/${params.tagName}`;
+  const workflowRunUrl = `https://github.com/${repoOwner}/${repoName}/actions`;
 
   return {
     tagName: params.tagName,

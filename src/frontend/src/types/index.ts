@@ -27,8 +27,12 @@ export interface Vulnerability {
   imageName?: string;
   filePath?: string;
   createdAt: string;
-  repoOwner?: string;
-  repoName?: string;
+  
+  // Repository context for multi-repo support
+  repoOwner: string;      // GitHub repository owner (user/org)
+  repoName: string;       // GitHub repository name
+  repoUrl?: string;       // Optional: Full GitHub URL for reference
+  defaultBranch?: string; // Optional: Target branch (defaults to repo's default)
 }
 
 export interface StepLogEntry {
