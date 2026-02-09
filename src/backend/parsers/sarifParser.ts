@@ -95,7 +95,11 @@ function extractFilePath(result: SarifResult): string | undefined {
 /**
  * Parses a single SARIF result into our normalized Vulnerability format
  */
-function parseSarifResult(result: SarifResult, toolName: string): Vulnerability {
+function parseSarifResult(
+  result: SarifResult,
+  toolName: string,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability {
   const cveId = extractCveId(result);
   const packageName = extractPackageName(result);
   const filePath = extractFilePath(result);
@@ -139,13 +143,19 @@ function parseSarifResult(result: SarifResult, toolName: string): Vulnerability 
     imageName: isContainer ? imageName : undefined,
     filePath: !isContainer ? filePath : undefined,
     createdAt: new Date().toISOString(),
+    repoOwner: repoContext.owner,
+    repoName: repoContext.repo,
+    repoUrl: repoContext.url,
   };
 }
 
 /**
  * Parses SARIF scan results into normalized Vulnerability objects
  */
-export function parseSarifScanResult(sarifLog: SarifLog): Vulnerability[] {
+export function parseSarifScanResult(
+  sarifLog: SarifLog,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability[] {
   const vulnerabilities: Vulnerability[] = [];
   
   for (const run of sarifLog.runs) {
@@ -157,7 +167,7 @@ export function parseSarifScanResult(sarifLog: SarifLog): Vulnerability[] {
         if (result.level === "none") continue;
         
         try {
-          vulnerabilities.push(parseSarifResult(result, toolName));
+          vulnerabilities.push(parseSarifResult(result, toolName, repoContext));
         } catch (err) {
           console.warn(`[SARIF Parser] Failed to parse result:`, err);
           // Continue processing other results

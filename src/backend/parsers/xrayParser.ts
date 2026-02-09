@@ -16,7 +16,10 @@ function normalizeXraySeverity(severity: string): Severity {
 /**
  * Parses a single Xray vulnerability into our normalized Vulnerability format
  */
-function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
+function parseXrayVulnerability(
+  xrayVuln: XrayVulnerability,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability[] {
   const vulnerabilities: Vulnerability[] = [];
   
   // Extract CVE ID (use first CVE if available, otherwise use issue_id)
@@ -69,6 +72,9 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
         imageName: isContainer ? imageName : undefined,
         filePath: !isContainer ? filePath : undefined,
         createdAt: new Date().toISOString(),
+        repoOwner: repoContext.owner,
+        repoName: repoContext.repo,
+        repoUrl: repoContext.url,
       });
     }
   } else {
@@ -83,6 +89,9 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
       description: vulnDescription,
       source: "xray",
       createdAt: new Date().toISOString(),
+      repoOwner: repoContext.owner,
+      repoName: repoContext.repo,
+      repoUrl: repoContext.url,
     });
   }
   
@@ -92,11 +101,14 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
 /**
  * Parses Xray scan results into normalized Vulnerability objects
  */
-export function parseXrayScanResult(scanResult: XrayScanResult): Vulnerability[] {
+export function parseXrayScanResult(
+  scanResult: XrayScanResult,
+  repoContext: { owner: string; repo: string; url?: string }
+): Vulnerability[] {
   const vulnerabilities: Vulnerability[] = [];
   
   for (const xrayVuln of scanResult.vulnerabilities) {
-    vulnerabilities.push(...parseXrayVulnerability(xrayVuln));
+    vulnerabilities.push(...parseXrayVulnerability(xrayVuln, repoContext));
   }
   
   return vulnerabilities;

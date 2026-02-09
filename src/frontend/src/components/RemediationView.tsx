@@ -30,6 +30,11 @@ export function RemediationView({
           <p className="text-sm text-gray-500">
             {vulnerability.packageName} {vulnerability.currentVersion}
           </p>
+          {vulnerability.repoOwner && vulnerability.repoName && (
+            <p className="text-xs text-gray-400 mt-1">
+              Repository: {vulnerability.repoOwner}/{vulnerability.repoName}
+            </p>
+          )}
         </div>
         <button
           onClick={onStart}
