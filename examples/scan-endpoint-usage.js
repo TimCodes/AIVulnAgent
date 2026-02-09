@@ -3,7 +3,7 @@
 /**
  * Example usage of the normalized vulnerability scan endpoint
  * 
- * This script demonstrates how to send scan results from Xray and Dependabot
+ * This script demonstrates how to send scan results from Xray, Dependabot, and SARIF
  * to the /api/vulnerabilities/scan endpoint.
  */
 
@@ -88,7 +88,52 @@ const dependabotScanExample = {
   }
 };
 
-// Example 3: Direct format (backward compatible)
+// Example 3: SARIF format (Standard format for security tools)
+const sarifScanExample = {
+  source: "sarif",
+  data: {
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "Trivy",
+            version: "0.48.0",
+            informationUri: "https://trivy.dev"
+          }
+        },
+        results: [
+          {
+            ruleId: "CVE-2023-45857",
+            level: "error",
+            message: {
+              text: "axios vulnerable to Server-Side Request Forgery"
+            },
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: {
+                    uri: "package.json"
+                  }
+                }
+              }
+            ],
+            properties: {
+              packageName: "axios",
+              currentVersion: "1.5.0",
+              fixedVersion: "1.6.0",
+              severity: "high",
+              cve: "CVE-2023-45857"
+            }
+          }
+        ]
+      }
+    ]
+  }
+};
+
+// Example 4: Direct format (backward compatible)
 const directFormatExample = {
   source: "direct",
   data: {
@@ -113,6 +158,11 @@ console.log("POST /api/vulnerabilities/scan");
 console.log(JSON.stringify(dependabotScanExample, null, 2));
 console.log("\n");
 
+console.log("=== SARIF Scan Example ===");
+console.log("POST /api/vulnerabilities/scan");
+console.log(JSON.stringify(sarifScanExample, null, 2));
+console.log("\n");
+
 console.log("=== Direct Format Example (backward compatible) ===");
 console.log("POST /api/vulnerabilities/scan");
 console.log(JSON.stringify(directFormatExample, null, 2));
@@ -130,6 +180,12 @@ console.log("\n# Dependabot scan result:");
 console.log(`curl -X POST http://localhost:3001/api/vulnerabilities/scan \\
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(dependabotScanExample)}'
+`);
+
+console.log("\n# SARIF scan result:");
+console.log(`curl -X POST http://localhost:3001/api/vulnerabilities/scan \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(sarifScanExample)}'
 `);
 
 console.log("\n# Direct format:");

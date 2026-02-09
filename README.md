@@ -72,7 +72,7 @@ The backend runs on `http://localhost:3001` and the frontend on `http://localhos
 
 ### Ingest Vulnerabilities
 
-The system supports ingesting vulnerabilities from multiple sources including JFrog Xray, GitHub Dependabot, and direct format.
+The system supports ingesting vulnerabilities from multiple sources including JFrog Xray, GitHub Dependabot, SARIF format, and direct format.
 
 #### Normalized Scan Endpoint (Recommended)
 
@@ -124,6 +124,32 @@ curl -X POST http://localhost:3001/api/vulnerabilities/scan \
       ]
     }
   }'
+
+# Ingest SARIF format scan results
+curl -X POST http://localhost:3001/api/vulnerabilities/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "sarif",
+    "data": {
+      "version": "2.1.0",
+      "runs": [{
+        "tool": {
+          "driver": {"name": "SecurityScanner"}
+        },
+        "results": [{
+          "ruleId": "CVE-2024-12345",
+          "level": "error",
+          "message": {"text": "Critical vulnerability found"},
+          "properties": {
+            "packageName": "lodash",
+            "currentVersion": "4.17.20",
+            "fixedVersion": "4.17.21",
+            "severity": "critical"
+          }
+        }]
+      }]
+    }
+  }'
 ```
 
 #### Direct Vulnerability Endpoint (Legacy)
@@ -142,6 +168,18 @@ curl -X POST http://localhost:3001/api/vulnerabilities \
     "source": "snyk",
     "filePath": "package.json"
   }'
+```
+
+### Export Vulnerabilities
+
+```bash
+# Export all vulnerabilities as SARIF
+curl http://localhost:3001/api/vulnerabilities/export/sarif
+
+# Export specific vulnerabilities as SARIF
+curl -X POST http://localhost:3001/api/vulnerabilities/export/sarif \
+  -H "Content-Type: application/json" \
+  -d '{"ids": ["vuln-id-1", "vuln-id-2"]}'
 ```
 
 ### Remediation

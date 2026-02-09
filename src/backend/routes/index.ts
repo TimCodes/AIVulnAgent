@@ -5,8 +5,11 @@ import type { Vulnerability, SSEEvent } from "../types/index.js";
 import {
   parseXrayScanResult,
   parseDependabotScanResult,
+  parseSarifScanResult,
+  vulnerabilitiesToSarif,
   type XrayScanResult,
   type DependabotScanResult,
+  type SarifLog,
 } from "../parsers/index.js";
 
 const router = Router();
@@ -47,14 +50,14 @@ router.get("/api/vulnerabilities/:id", (req: Request, res: Response) => {
 
 // -------------------------------------------------------------------------
 // POST /api/vulnerabilities/scan — Ingest scan results (normalized endpoint)
-// Accepts scan results from Xray, Dependabot, or direct vulnerability format
+// Accepts scan results from Xray, Dependabot, SARIF, or direct vulnerability format
 // -------------------------------------------------------------------------
 router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
   try {
     const { source, data } = req.body;
 
     if (!source) {
-      return res.status(400).json({ error: "Missing 'source' field. Must be one of: xray, dependabot, direct" });
+      return res.status(400).json({ error: "Missing 'source' field. Must be one of: xray, dependabot, sarif, direct" });
     }
 
     if (!data) {
@@ -72,6 +75,10 @@ router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
         parsedVulnerabilities = parseDependabotScanResult(data as DependabotScanResult);
         break;
       
+      case "sarif":
+        parsedVulnerabilities = parseSarifScanResult(data as SarifLog);
+        break;
+      
       case "direct":
         // Direct format - data should be a single vulnerability or array of vulnerabilities
         const vulnArray = Array.isArray(data) ? data : [data];
@@ -84,7 +91,7 @@ router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
       
       default:
         return res.status(400).json({ 
-          error: `Unsupported source: ${source}. Must be one of: xray, dependabot, direct` 
+          error: `Unsupported source: ${source}. Must be one of: xray, dependabot, sarif, direct` 
         });
     }
 
@@ -210,6 +217,49 @@ router.get("/api/remediation/:id", (req: Request, res: Response) => {
   const result = remediationResults.get(req.params.id);
   if (!result) return res.status(404).json({ error: "No remediation found" });
   res.json(result);
+});
+
+// -------------------------------------------------------------------------
+// GET /api/vulnerabilities/export/sarif — Export all vulnerabilities as SARIF
+// -------------------------------------------------------------------------
+router.get("/api/vulnerabilities/export/sarif", (_req: Request, res: Response) => {
+  const allVulnerabilities = Array.from(vulnerabilities.values());
+  
+  if (allVulnerabilities.length === 0) {
+    return res.status(404).json({ error: "No vulnerabilities found to export" });
+  }
+
+  const sarifLog = vulnerabilitiesToSarif(allVulnerabilities);
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", 'attachment; filename="vulnerabilities.sarif"');
+  res.json(sarifLog);
+});
+
+// -------------------------------------------------------------------------
+// POST /api/vulnerabilities/export/sarif — Export specific vulnerabilities as SARIF
+// -------------------------------------------------------------------------
+router.post("/api/vulnerabilities/export/sarif", (req: Request, res: Response) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "Missing or invalid 'ids' field. Must be an array of vulnerability IDs" });
+  }
+
+  const selectedVulnerabilities: Vulnerability[] = [];
+  for (const id of ids) {
+    const vuln = vulnerabilities.get(id);
+    if (vuln) {
+      selectedVulnerabilities.push(vuln);
+    }
+  }
+
+  if (selectedVulnerabilities.length === 0) {
+    return res.status(404).json({ error: "No vulnerabilities found for the provided IDs" });
+  }
+
+  const sarifLog = vulnerabilitiesToSarif(selectedVulnerabilities);
+  res.setHeader("Content-Type", "application/json");
+  res.json(sarifLog);
 });
 
 export default router;
