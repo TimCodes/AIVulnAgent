@@ -9,7 +9,9 @@
     "build:backend": "tsc -p tsconfig.json",
     "build:frontend": "cd src/frontend && npm run build",
     "build": "npm run build:backend && npm run build:frontend",
-    "start": "node dist/backend/server.js"
+    "start": "node dist/backend/server.js",
+    "validate": "tsx src/backend/runManualValidation.ts",
+    "validate:all": "tsx src/backend/runManualValidation.ts all"
   },
   "dependencies": {
     "@azure/openai": "^1.0.0-beta.13",

@@ -205,6 +205,25 @@ See `examples/scan-endpoint-usage.js` for more detailed examples.
 | Backend | Node.js + Express + TypeScript |
 | Frontend | React + Tailwind CSS |
 
+## Manual Testing & Validation
+
+You can manually test and validate each agent in the workflow individually. This is useful for debugging, testing, and understanding how each agent works.
+
+```bash
+# Test all agents
+npm run validate:all
+
+# Test individual agents
+npm run validate classifyVuln
+npm run validate searchRAG
+npm run validate researchFix
+
+# See all available commands
+npm run validate help
+```
+
+For detailed documentation on manual validation, see [docs/MANUAL_VALIDATION.md](docs/MANUAL_VALIDATION.md).
+
 ## GitHub Workflow
 
 The `rebuild-image.yml` workflow is triggered when container vulnerabilities need a Dockerfile change. It uses GitHub Environments with required reviewers so a human must approve before the image is rebuilt.

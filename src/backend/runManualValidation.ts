@@ -5,6 +5,9 @@
  * 
  * This script allows you to manually test and validate each agent individually.
  * 
+ * Setup:
+ *   Copy .env.example to .env and configure your credentials before running tests.
+ * 
  * Usage:
  *   # Run all tests
  *   npx tsx src/backend/runManualValidation.ts all
@@ -50,9 +53,23 @@ async function main() {
 
   // Check if .env file is configured
   if (!process.env.AZURE_OPENAI_ENDPOINT) {
-    console.warn("⚠️  Warning: AZURE_OPENAI_ENDPOINT not found in environment variables");
-    console.warn("⚠️  Some tests may fail without proper Azure OpenAI configuration");
-    console.warn("⚠️  Copy .env.example to .env and configure your credentials\n");
+    console.error("❌ Error: AZURE_OPENAI_ENDPOINT not found in environment variables");
+    console.error("\n📋 Setup Instructions:");
+    console.error("1. Copy .env.example to .env");
+    console.error("2. Configure your Azure OpenAI credentials");
+    console.error("3. Optionally configure Azure Search and GitHub credentials\n");
+    console.error("For more details, see docs/MANUAL_VALIDATION.md\n");
+    process.exit(1);
+  }
+
+  if (!process.env.AZURE_SEARCH_API_KEY) {
+    console.warn("⚠️  Warning: AZURE_SEARCH_API_KEY not configured");
+    console.warn("⚠️  RAG-related tests (searchRAG, storeInRAG) may fail\n");
+  }
+
+  if (!process.env.GITHUB_TOKEN) {
+    console.warn("⚠️  Warning: GITHUB_TOKEN not configured");
+    console.warn("⚠️  GitHub-related tests (createPR, createTagWorkflow) will only run in dry-run mode\n");
   }
 
   try {
