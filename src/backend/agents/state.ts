@@ -91,6 +91,20 @@ export const RemediationStateAnnotation = Annotation.Root({
     default: () => "",
   }),
 
+  // --- Rebuild Verification ---
+  rebuildVerified: Annotation<boolean>({
+    reducer: (_, next) => next,
+    default: () => false,
+  }),
+  rebuildSuccessful: Annotation<boolean>({
+    reducer: (_, next) => next,
+    default: () => false,
+  }),
+  rebuildScanResult: Annotation<import("../types/index.js").RebuildScanResult | null>({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
+
   // --- Tracking ---
   status: Annotation<RemediationStatus>({
     reducer: (_, next) => next,

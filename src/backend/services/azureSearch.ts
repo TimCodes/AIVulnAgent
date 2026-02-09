@@ -61,7 +61,7 @@ export async function searchFixes(
   const results: StoredFix[] = [];
   const searchText = `${cveId} ${packageName}`;
 
-  const response = searchClient.search(searchText, {
+  const response = await searchClient.search(searchText, {
     top: 5,
     select: [
       "id", "cveId", "category", "packageName", "fixDescription",
