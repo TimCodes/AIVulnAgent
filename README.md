@@ -70,8 +70,66 @@ The backend runs on `http://localhost:3001` and the frontend on `http://localhos
 
 ## API
 
+### Ingest Vulnerabilities
+
+The system supports ingesting vulnerabilities from multiple sources including JFrog Xray, GitHub Dependabot, and direct format.
+
+#### Normalized Scan Endpoint (Recommended)
+
 ```bash
-# Ingest a vulnerability
+# Ingest Xray scan results
+curl -X POST http://localhost:3001/api/vulnerabilities/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "xray",
+    "data": {
+      "vulnerabilities": [
+        {
+          "issue_id": "XRAY-123456",
+          "summary": "Remote Code Execution vulnerability in log4j-core",
+          "severity": "Critical",
+          "cves": [{"cve": "CVE-2021-44228"}],
+          "components": {
+            "org.apache.logging.log4j:log4j-core:2.14.1": {
+              "fixed_versions": ["2.17.1"]
+            }
+          },
+          "description": "Log4j RCE vulnerability"
+        }
+      ]
+    }
+  }'
+
+# Ingest Dependabot alerts
+curl -X POST http://localhost:3001/api/vulnerabilities/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "dependabot",
+    "data": {
+      "alerts": [
+        {
+          "dependency": {
+            "package": {"name": "express"},
+            "manifest_path": "package.json"
+          },
+          "security_advisory": {
+            "cve_id": "CVE-2024-29041",
+            "severity": "high",
+            "description": "Open redirect vulnerability"
+          },
+          "security_vulnerability": {
+            "first_patched_version": {"identifier": "4.19.2"}
+          }
+        }
+      ]
+    }
+  }'
+```
+
+#### Direct Vulnerability Endpoint (Legacy)
+
+```bash
+# Ingest a single vulnerability directly
 curl -X POST http://localhost:3001/api/vulnerabilities \
   -H "Content-Type: application/json" \
   -d '{
@@ -84,13 +142,19 @@ curl -X POST http://localhost:3001/api/vulnerabilities \
     "source": "snyk",
     "filePath": "package.json"
   }'
+```
 
+### Remediation
+
+```bash
 # Start remediation (streaming)
 curl http://localhost:3001/api/remediate/{id}/stream
 
 # Start remediation (non-streaming)
 curl -X POST http://localhost:3001/api/remediate/{id}
 ```
+
+See `examples/scan-endpoint-usage.js` for more detailed examples.
 
 ## Architecture
 

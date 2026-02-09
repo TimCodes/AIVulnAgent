@@ -2,6 +2,12 @@ import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { buildRemediationAgentMap } from "../agents/agentMap.js";
 import type { Vulnerability, SSEEvent } from "../types/index.js";
+import {
+  parseXrayScanResult,
+  parseDependabotScanResult,
+  type XrayScanResult,
+  type DependabotScanResult,
+} from "../parsers/index.js";
 
 const router = Router();
 
@@ -37,6 +43,69 @@ router.get("/api/vulnerabilities/:id", (req: Request, res: Response) => {
   const vuln = vulnerabilities.get(req.params.id);
   if (!vuln) return res.status(404).json({ error: "Not found" });
   res.json(vuln);
+});
+
+// -------------------------------------------------------------------------
+// POST /api/vulnerabilities/scan — Ingest scan results (normalized endpoint)
+// Accepts scan results from Xray, Dependabot, or direct vulnerability format
+// -------------------------------------------------------------------------
+router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
+  try {
+    const { source, data } = req.body;
+
+    if (!source) {
+      return res.status(400).json({ error: "Missing 'source' field. Must be one of: xray, dependabot, direct" });
+    }
+
+    if (!data) {
+      return res.status(400).json({ error: "Missing 'data' field" });
+    }
+
+    let parsedVulnerabilities: Vulnerability[] = [];
+
+    switch (source.toLowerCase()) {
+      case "xray":
+        parsedVulnerabilities = parseXrayScanResult(data as XrayScanResult);
+        break;
+      
+      case "dependabot":
+        parsedVulnerabilities = parseDependabotScanResult(data as DependabotScanResult);
+        break;
+      
+      case "direct":
+        // Direct format - data should be a single vulnerability or array of vulnerabilities
+        const vulnArray = Array.isArray(data) ? data : [data];
+        parsedVulnerabilities = vulnArray.map((vuln: any) => ({
+          ...vuln,
+          id: vuln.id ?? uuidv4(),
+          createdAt: vuln.createdAt ?? new Date().toISOString(),
+        }));
+        break;
+      
+      default:
+        return res.status(400).json({ 
+          error: `Unsupported source: ${source}. Must be one of: xray, dependabot, direct` 
+        });
+    }
+
+    // Store all parsed vulnerabilities
+    const storedVulnerabilities: Vulnerability[] = [];
+    for (const vuln of parsedVulnerabilities) {
+      vulnerabilities.set(vuln.id, vuln);
+      storedVulnerabilities.push(vuln);
+    }
+
+    res.status(201).json({
+      message: `Successfully ingested ${storedVulnerabilities.length} vulnerability/vulnerabilities`,
+      count: storedVulnerabilities.length,
+      vulnerabilities: storedVulnerabilities,
+    });
+  } catch (err: any) {
+    res.status(500).json({ 
+      error: "Failed to parse scan results", 
+      details: err.message 
+    });
+  }
 });
 
 // -------------------------------------------------------------------------
