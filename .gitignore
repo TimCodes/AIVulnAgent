@@ -6,3 +6,4 @@ dist/
 !vite.config.ts
 .DS_Store
 *.tsbuildinfo
+test-*.mjs
