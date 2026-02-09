@@ -12,7 +12,7 @@
     "start": "node dist/backend/server.js"
   },
   "dependencies": {
-    "@azure/openai": "^2.1.0",
+    "@azure/openai": "^1.0.0-beta.13",
     "@azure/search-documents": "^12.1.0",
     "@langchain/core": "^0.3.0",
     "@langchain/langgraph": "^0.2.0",
