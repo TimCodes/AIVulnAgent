@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { buildRemediationAgentMap } from "../agents/agentMap.js";
-import type { Vulnerability, SSEEvent } from "../types/index.js";
+import type { Vulnerability, SSEEvent, RebuildScanResult } from "../types/index.js";
 import {
   parseXrayScanResult,
   parseDependabotScanResult,
@@ -11,6 +11,7 @@ import {
   type DependabotScanResult,
   type SarifLog,
 } from "../parsers/index.js";
+import { resolvePendingRebuild, listPendingRebuilds } from "../services/pendingRebuilds.js";
 
 const router = Router();
 
@@ -260,6 +261,34 @@ router.post("/api/vulnerabilities/export/sarif", (req: Request, res: Response) =
   const sarifLog = vulnerabilitiesToSarif(selectedVulnerabilities);
   res.setHeader("Content-Type", "application/json");
   res.json(sarifLog);
+});
+
+// -------------------------------------------------------------------------
+// POST /api/webhook/rebuild-complete — Callback from rebuild workflow
+// -------------------------------------------------------------------------
+router.post("/api/webhook/rebuild-complete", (req: Request, res: Response) => {
+  const body = req.body as RebuildScanResult;
+
+  if (!body.vulnId || !body.cveId) {
+    return res.status(400).json({ error: "Missing required fields: vulnId, cveId" });
+  }
+
+  const resolved = resolvePendingRebuild(body.vulnId, body);
+
+  if (!resolved) {
+    return res.status(404).json({
+      error: `No pending rebuild found for vulnId: ${body.vulnId}`,
+    });
+  }
+
+  res.json({ success: true, message: `Rebuild result received for ${body.cveId}` });
+});
+
+// -------------------------------------------------------------------------
+// GET /api/rebuilds/pending — List pending rebuilds (diagnostics)
+// -------------------------------------------------------------------------
+router.get("/api/rebuilds/pending", (_req: Request, res: Response) => {
+  res.json(listPendingRebuilds());
 });
 
 export default router;

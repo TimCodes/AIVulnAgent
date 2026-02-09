@@ -13,6 +13,8 @@ export interface TriggerBuildAndScanParams {
   imageName: string;
   ref?: string; // branch or tag to build from; defaults to default branch
   extraInputs?: Record<string, string>;
+  repoOwner?: string;
+  repoName?: string;
 }
 
 export interface TriggerBuildAndScanResult {
@@ -30,12 +32,15 @@ export interface TriggerBuildAndScanResult {
 export async function triggerBuildAndScan(
   params: TriggerBuildAndScanParams
 ): Promise<TriggerBuildAndScanResult> {
-  const { data: repoData } = await octokit.repos.get({ owner, repo });
+  const targetOwner = params.repoOwner ?? owner;
+  const targetRepo = params.repoName ?? repo;
+
+  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
   const ref = params.ref ?? repoData.default_branch;
 
   await octokit.actions.createWorkflowDispatch({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     workflow_id: "build-and-scan.yml",
     ref,
     inputs: {
@@ -45,7 +50,7 @@ export async function triggerBuildAndScan(
   });
 
   return {
-    workflowRunUrl: `https://github.com/${owner}/${repo}/actions`,
+    workflowRunUrl: `https://github.com/${targetOwner}/${targetRepo}/actions`,
     dispatched: true,
   };
 }
@@ -60,6 +65,8 @@ export interface CreatePullRequestParams {
   title: string;
   body: string;
   files: Array<{ path: string; content: string }>;
+  repoOwner?: string;
+  repoName?: string;
 }
 
 export interface CreatePullRequestResult {
@@ -76,29 +83,32 @@ export interface CreatePullRequestResult {
 export async function createPullRequest(
   params: CreatePullRequestParams
 ): Promise<CreatePullRequestResult> {
+  const targetOwner = params.repoOwner ?? owner;
+  const targetRepo = params.repoName ?? repo;
+
   // 1. Get default branch + latest SHA
-  const { data: repoData } = await octokit.repos.get({ owner, repo });
+  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
   const defaultBranch = repoData.default_branch;
 
   const { data: refData } = await octokit.git.getRef({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     ref: `heads/${defaultBranch}`,
   });
   const baseSha = refData.object.sha;
 
   // 2. Create branch
   await octokit.git.createRef({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     ref: `refs/heads/${params.branchName}`,
     sha: baseSha,
   });
 
   // 3. Get base tree
   const { data: commitData } = await octokit.git.getCommit({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     commit_sha: baseSha,
   });
 
@@ -106,8 +116,8 @@ export async function createPullRequest(
   const treeItems = await Promise.all(
     params.files.map(async (file) => {
       const { data: blob } = await octokit.git.createBlob({
-        owner,
-        repo,
+        owner: targetOwner,
+        repo: targetRepo,
         content: Buffer.from(file.content).toString("base64"),
         encoding: "base64",
       });
@@ -122,16 +132,16 @@ export async function createPullRequest(
 
   // 5. Create tree
   const { data: newTree } = await octokit.git.createTree({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     base_tree: commitData.tree.sha,
     tree: treeItems,
   });
 
   // 6. Create commit
   const { data: newCommit } = await octokit.git.createCommit({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     message: `fix: remediate ${params.cveId}\n\n${params.body}`,
     tree: newTree.sha,
     parents: [baseSha],
@@ -139,16 +149,16 @@ export async function createPullRequest(
 
   // 7. Update branch ref
   await octokit.git.updateRef({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     ref: `heads/${params.branchName}`,
     sha: newCommit.sha,
   });
 
   // 8. Open PR
   const { data: pr } = await octokit.pulls.create({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     title: params.title,
     body: params.body,
     head: params.branchName,
@@ -265,6 +275,10 @@ export interface CreateApprovalTagWorkflowParams {
   cveId: string;
   message: string;
   imageName?: string;
+  repoOwner?: string;
+  repoName?: string;
+  vulnId: string;
+  callbackUrl: string;
 }
 
 export interface CreateApprovalTagWorkflowResult {
@@ -286,20 +300,23 @@ export interface CreateApprovalTagWorkflowResult {
 export async function createApprovalTagWorkflow(
   params: CreateApprovalTagWorkflowParams
 ): Promise<CreateApprovalTagWorkflowResult> {
+  const targetOwner = params.repoOwner ?? owner;
+  const targetRepo = params.repoName ?? repo;
+
   // 1. Get default branch HEAD
-  const { data: repoData } = await octokit.repos.get({ owner, repo });
+  const { data: repoData } = await octokit.repos.get({ owner: targetOwner, repo: targetRepo });
   const defaultBranch = repoData.default_branch;
 
   const { data: refData } = await octokit.git.getRef({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     ref: `heads/${defaultBranch}`,
   });
 
   // 2. Create annotated tag
   const { data: tagObj } = await octokit.git.createTag({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     tag: params.tagName,
     message: `${params.message}\n\nRemediation for ${params.cveId}`,
     object: refData.object.sha,
@@ -308,8 +325,8 @@ export async function createApprovalTagWorkflow(
 
   // 3. Create tag reference
   await octokit.git.createRef({
-    owner,
-    repo,
+    owner: targetOwner,
+    repo: targetRepo,
     ref: `refs/tags/${params.tagName}`,
     sha: tagObj.sha,
   });
@@ -317,13 +334,15 @@ export async function createApprovalTagWorkflow(
   // 4. Dispatch the rebuild workflow (requires env approval to proceed)
   try {
     await octokit.actions.createWorkflowDispatch({
-      owner,
-      repo,
+      owner: targetOwner,
+      repo: targetRepo,
       workflow_id: "rebuild-image.yml",
       ref: defaultBranch,
       inputs: {
         tag: params.tagName,
         cve_id: params.cveId,
+        vuln_id: params.vulnId,
+        callback_url: params.callbackUrl,
         ...(params.imageName ? { image_name: params.imageName } : {}),
       },
     });
@@ -334,8 +353,8 @@ export async function createApprovalTagWorkflow(
     );
   }
 
-  const tagUrl = `https://github.com/${owner}/${repo}/releases/tag/${params.tagName}`;
-  const workflowRunUrl = `https://github.com/${owner}/${repo}/actions`;
+  const tagUrl = `https://github.com/${targetOwner}/${targetRepo}/releases/tag/${params.tagName}`;
+  const workflowRunUrl = `https://github.com/${targetOwner}/${targetRepo}/actions`;
 
   return {
     tagName: params.tagName,
