@@ -22,6 +22,9 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
   // Extract CVE ID (use first CVE if available, otherwise use issue_id)
   const cveId = xrayVuln.cves?.[0]?.cve || xrayVuln.issue_id;
   
+  // Extract description (prefer description over summary)
+  const description = xrayVuln.description || xrayVuln.summary;
+  
   // Process each affected component
   if (xrayVuln.components) {
     for (const [componentId, component] of Object.entries(xrayVuln.components)) {
@@ -61,7 +64,7 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
         currentVersion,
         fixedVersion,
         severity: normalizeXraySeverity(xrayVuln.severity),
-        description: xrayVuln.description || xrayVuln.summary,
+        description,
         source: "xray",
         imageName: isContainer ? imageName : undefined,
         filePath: !isContainer ? filePath : undefined,
@@ -77,7 +80,7 @@ function parseXrayVulnerability(xrayVuln: XrayVulnerability): Vulnerability[] {
       currentVersion: "unknown",
       fixedVersion: undefined,
       severity: normalizeXraySeverity(xrayVuln.severity),
-      description: xrayVuln.description || xrayVuln.summary,
+      description,
       source: "xray",
       createdAt: new Date().toISOString(),
     });

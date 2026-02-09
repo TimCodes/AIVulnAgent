@@ -96,7 +96,7 @@ router.post("/api/vulnerabilities/scan", (req: Request, res: Response) => {
     }
 
     res.status(201).json({
-      message: `Successfully ingested ${storedVulnerabilities.length} vulnerability/vulnerabilities`,
+      message: `Successfully ingested ${storedVulnerabilities.length} ${storedVulnerabilities.length === 1 ? 'vulnerability' : 'vulnerabilities'}`,
       count: storedVulnerabilities.length,
       vulnerabilities: storedVulnerabilities,
     });
